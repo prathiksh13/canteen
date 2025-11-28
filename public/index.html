@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Canteen</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script>
+    (function(){
+      var t = localStorage.getItem('token');
+      if(t){
+        fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + t }})
+          .then(r => r.ok ? r.json() : null)
+          .then(u => { if(!u) return; var role = u.role; if(role==='admin') location.href='/admin.html'; else if(role==='staff') location.href='/staff.html'; else location.href='/student.html'; });
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Canteen</h1>
+    <div class="grid">
+      <div class="panel">
+        <div class="row"><div class="pill">Login</div></div>
+        <div class="row"><input id="l_email" placeholder="Email" /></div>
+        <div class="row"><input id="l_phone" placeholder="Phone" /></div>
+        <div class="row"><input id="l_password" type="password" placeholder="Password" /></div>
+        <div class="row"><button id="login">Login</button></div>
+      </div>
+      <div class="panel">
+        <div class="row"><div class="pill">Signup</div></div>
+        <div class="row"><input id="s_name" placeholder="Name" /></div>
+        <div class="row"><input id="s_roll" placeholder="Roll Number" /></div>
+        <div class="row"><input id="s_email" placeholder="Email" /></div>
+        <div class="row"><input id="s_phone" placeholder="Phone" /></div>
+        <div class="row"><input id="s_password" type="password" placeholder="Password" /></div>
+        <div class="row"><button id="signup">Signup</button></div>
+      </div>
+      <div class="panel">
+        <div class="row"><div class="pill">Temp Credentials</div></div>
+        <div class="row">Admin: admin@canteen.local / admin123</div>
+        <div class="row">Staff: staff@canteen.local / staff123</div>
+        <div class="row">Student: student@canteen.local / student123</div>
+        <div class="row"><button id="logout">Logout</button></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const setToken = t => localStorage.setItem('token', t);
+    const doLogin = async () => {
+      const body = { email: document.getElementById('l_email').value || null, phone: document.getElementById('l_phone').value || null, password: document.getElementById('l_password').value };
+      const r = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      const x = await r.json();
+      if(r.ok){ setToken(x.token); const role = x.user.role; if(role==='admin') location.href='/admin.html'; else if(role==='staff') location.href='/staff.html'; else location.href='/student.html'; } else { alert(JSON.stringify(x)); }
+    };
+    const doSignup = async () => {
+      const body = { name: document.getElementById('s_name').value, rollNumber: document.getElementById('s_roll').value, email: document.getElementById('s_email').value || null, phone: document.getElementById('s_phone').value || null, password: document.getElementById('s_password').value };
+      const r = await fetch('/api/auth/signup', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      const x = await r.json();
+      if(r.ok){ setToken(x.token); const role = x.user.role; if(role==='admin') location.href='/admin.html'; else if(role==='staff') location.href='/staff.html'; else location.href='/student.html'; } else { alert(JSON.stringify(x)); }
+    };
+    document.getElementById('login').onclick = doLogin;
+    document.getElementById('signup').onclick = doSignup;
+    document.getElementById('logout').onclick = async () => {
+      const t = localStorage.getItem('token');
+      if (t) await fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + t } });
+      localStorage.removeItem('token');
+      alert('Logged out');
+    };
+  </script>
+</body>
+</html>

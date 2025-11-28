@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Admin</h1>
+    <div class="row"><span id="who" class="pill"></span> <button id="logout">Logout</button></div>
+    <div class="grid">
+      <div class="panel">
+        <div class="row"><div class="pill">Summary</div><select id="range"><option value="today">Today</option><option value="7d">7d</option><option value="30d">30d</option></select><button id="loadSummary">Load</button></div>
+        <div id="summary"></div>
+      </div>
+      <div class="panel">
+        <div class="row"><div class="pill">Revenue</div><select id="revRange"><option value="7d">7d</option><option value="30d">30d</option></select><button id="loadRevenue">Load</button></div>
+        <div id="revenue"></div>
+      </div>
+      <div class="panel">
+        <div class="row"><div class="pill">Top Items</div><button id="loadTop">Load</button></div>
+        <div id="top" class="list"></div>
+      </div>
+      <div class="panel">
+        <div class="row"><div class="pill">Orders Per Hour</div><button id="loadHours">Load</button></div>
+        <div id="hours" class="list"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <div class="row"><div class="pill">Reports</div><select id="type"><option value="orders">Orders</option><option value="item_sales">Item Sales</option><option value="time_slots">Time Slots</option></select><input id="from" placeholder="From ISO" /><input id="to" placeholder="To ISO" /><button id="download">Download CSV</button></div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <div class="row"><div class="pill">Auto Insights</div></div>
+      <div id="insights" class="list"></div>
+    </div>
+  </div>
+  <script>
+    const byId = x => document.getElementById(x);
+    const tokenKey = 'token';
+    const ensureAdmin = async () => {
+      const t = localStorage.getItem(tokenKey);
+      if (!t) { location.href = '/'; return; }
+      const r = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + t } });
+      if (!r.ok) { location.href = '/'; return; }
+      const me = await r.json();
+      if (me.role !== 'admin') { location.href = '/'; return; }
+      byId('who').textContent = me.name + ' (admin)';
+    };
+    ensureAdmin();
+    byId('loadSummary').onclick = async () => {
+      const r = byId('range').value;
+      const res = await fetch('/api/analytics/summary?range=' + r);
+      const x = await res.json();
+      byId('summary').innerHTML = `Total Orders: ${x.totalOrders}<br>Total Revenue: ₹${x.totalRevenue}<br>Avg Order: ₹${x.avgOrderValue.toFixed(2)}<br>Active Users: ${x.activeUsers}`;
+    };
+    byId('loadTop').onclick = async () => {
+      const res = await fetch('/api/analytics/top-items?limit=5');
+      const arr = await res.json();
+      const el = byId('top');
+      el.innerHTML = '';
+      arr.forEach(x => {
+        const d = document.createElement('div');
+        d.className = 'row';
+        d.textContent = `${x.name} • ${x.count}`;
+        el.appendChild(d);
+      });
+    };
+    byId('loadRevenue').onclick = async () => {
+      const r = byId('revRange').value;
+      const res = await fetch('/api/analytics/revenue?range=' + r);
+      const x = await res.json();
+      byId('revenue').innerHTML = `Total: ₹${x.totalRevenue}<br>Cancelled: ₹${x.cancelledRevenue}<br>Net: ₹${x.netRevenue}`;
+    };
+    byId('logout').onclick = async () => {
+      const t = localStorage.getItem(tokenKey);
+      if (t) await fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + t } });
+      localStorage.removeItem(tokenKey);
+      location.href = '/';
+    };
+    byId('loadHours').onclick = async () => {
+      const res = await fetch('/api/analytics/orders-per-hour');
+      const arr = await res.json();
+      const el = byId('hours');
+      el.innerHTML = '';
+      arr.forEach(x => {
+        const d = document.createElement('div');
+        d.className = 'row';
+        d.textContent = `${x.hour} • ${x.orders}`;
+        el.appendChild(d);
+      });
+    };
+    byId('download').onclick = async () => {
+      const t = byId('type').value;
+      const f = byId('from').value;
+      const to = byId('to').value;
+      const url = `/api/analytics/reports?type=${encodeURIComponent(t)}${f?`&from=${encodeURIComponent(f)}`:''}${to?`&to=${encodeURIComponent(to)}`:''}`;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = t + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+    const buildInsights = async () => {
+      const res = await fetch('/api/analytics/top-items?limit=5');
+      const top = await res.json();
+      const res2 = await fetch('/api/analytics/orders-per-hour');
+      const hours = await res2.json();
+      const best = top[0] ? `This week’s best-selling item: ${top[0].name} (${top[0].count} orders)` : '';
+      const peak = hours.reduce((a,c) => c.orders > (a.orders||0) ? c : a, {});
+      const peakTxt = peak.hour ? `Peak time: ${peak.hour}:00` : '';
+      const low = hours.reduce((a,c) => c.orders < (a.orders||Infinity) ? c : a, {});
+      const lowTxt = low.hour ? `Low activity: ${low.hour}:00` : '';
+      byId('insights').innerHTML = [best, peakTxt, lowTxt].filter(Boolean).map(x => `<div class="row">${x}</div>`).join('');
+    };
+    buildInsights();
+    byId('loadSummary').click();
+    byId('loadRevenue').click();
+    byId('loadTop').click();
+    byId('loadHours').click();
+  </script>
+</body>
+</html>

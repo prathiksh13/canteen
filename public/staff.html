@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Staff</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Staff</h1>
+    <div class="row"><a class="card" href="/auth.html">Login</a> <span id="who" class="pill"></span> <button id="logout">Logout</button></div>
+    <div class="row">
+      <select id="filter">
+        <option value="">All</option>
+        <option value="placed">Placed</option>
+        <option value="accepted">Accepted</option>
+        <option value="preparing">Preparing</option>
+        <option value="ready">Ready</option>
+        <option value="completed">Completed</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <button id="load">Load</button>
+      <input id="capacity" placeholder="Max preparing" />
+      <button id="setCap">Set</button>
+    </div>
+    <div id="orders" class="list"></div>
+  </div>
+  <script>
+    const socket = io();
+    const byId = x => document.getElementById(x);
+    const tokenKey = 'token';
+    const setWho = async () => {
+      const t = localStorage.getItem(tokenKey);
+      if (!t) { byId('who').textContent = 'Guest'; location.href = '/'; return; }
+      const r = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + t } });
+      if (!r.ok) { location.href = '/'; return; }
+      const me = await r.json();
+      if (me.role !== 'staff' && me.role !== 'admin') { location.href = '/'; return; }
+      byId('who').textContent = me.role;
+    };
+    const origFetch = window.fetch.bind(window);
+    window.fetch = (url, opts = {}) => {
+      const headers = Object.assign({}, opts.headers || {});
+      const t = localStorage.getItem(tokenKey);
+      if (t) headers['Authorization'] = 'Bearer ' + t;
+      return origFetch(url, Object.assign({}, opts, { headers }));
+    };
+    const renderOrders = items => {
+      const el = byId('orders');
+      el.innerHTML = '';
+      items.forEach(o => {
+        const d = document.createElement('div');
+        d.className = 'panel';
+        const head = document.createElement('div');
+        head.className = 'row';
+        head.innerHTML = `<div>Token ${o.tokenNumber} • ₹${o.totalAmount} • <span class="badge">${o.status}</span> • ETA ${o.eta}m</div>`;
+        d.appendChild(head);
+        const itemsDiv = document.createElement('div');
+        o.items.forEach(it => {
+          const mi = document.createElement('div');
+          mi.className = 'row';
+          mi.textContent = `${it.itemId} x${it.qty}`;
+          itemsDiv.appendChild(mi);
+        });
+        d.appendChild(itemsDiv);
+        const btns = document.createElement('div');
+        btns.className = 'row';
+        ['accepted','preparing','ready','completed','cancelled'].forEach(st => {
+          const b = document.createElement('button');
+          b.textContent = st;
+          b.onclick = async () => {
+            const r = await fetch('/api/orders/' + o.id + '/status', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: st }) });
+            load();
+          };
+          btns.appendChild(b);
+        });
+        d.appendChild(btns);
+        const msgRow = document.createElement('div');
+        msgRow.className = 'row';
+        const msgInput = document.createElement('input');
+        msgInput.placeholder = 'Message to student';
+        const msgBtn = document.createElement('button');
+        msgBtn.textContent = 'Send';
+        msgBtn.onclick = async () => {
+          const txt = msgInput.value || '';
+          if (!txt) return;
+          await fetch('/api/orders/' + o.id + '/message', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: txt }) });
+          msgInput.value = '';
+        };
+        msgRow.appendChild(msgInput);
+        msgRow.appendChild(msgBtn);
+        d.appendChild(msgRow);
+        el.appendChild(d);
+      });
+    };
+    const load = async () => {
+      const f = byId('filter').value;
+      const r = await fetch('/api/orders' + (f ? ('?status=' + f) : ''));
+      let items = await r.json();
+      items = items.sort((a,b) => {
+        const shortPrepScore = a.items.reduce((t,i)=>t+i.qty,0) - b.items.reduce((t,i)=>t+i.qty,0);
+        const pickupProximity = (a.status==='ready') - (b.status==='ready');
+        const prepaidFlag = (a.prepaid?1:0) - (b.prepaid?1:0);
+        const sa = 0.5*shortPrepScore + 0.3*pickupProximity + 0.2*prepaidFlag;
+        const sb = -sa;
+        return sb - sa;
+      });
+      renderOrders(items);
+    };
+    byId('load').onclick = load;
+    byId('setCap').onclick = async () => {
+      const n = byId('capacity').value;
+      await fetch('/api/staff/capacity', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ max: n }) });
+    };
+    byId('logout').onclick = async () => {
+      const t = localStorage.getItem(tokenKey);
+      if (t) await fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + t } });
+      localStorage.removeItem(tokenKey);
+      location.href = '/';
+    };
+    socket.on('order:new', load);
+    socket.on('order:update', load);
+    setWho();
+    load();
+  </script>
+</body>
+</html>

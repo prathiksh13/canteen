@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Student</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Student</h1>
+   </span> <button id="logout">Logout</button></div>
+    <div class="grid">
+      <div class="panel">
+        <div class="row">
+          <select id="category">
+            <option value="">All</option>
+            <option value="breakfast">Breakfast</option>
+            <option value="snacks">Snacks</option>
+            <option value="drinks">Drinks</option>
+          </select>
+          <button id="loadMenu">Load Menu</button>
+        </div>
+        <div id="menu" class="list"></div>
+      </div>
+      <div class="panel">
+        <div class="row">
+          <div class="pill">Cart</div>
+          <select id="payment"><option value="cash">Pay in Cash</option><option value="online">Pay Online</option></select>
+          <button id="placeOrder">Place Order</button>
+        </div>
+        <div id="cart" class="list"></div>
+        <div class="row">
+          <textarea id="notes" rows="2" placeholder="Special instructions"></textarea>
+        </div>
+        <div class="row">
+          <input id="userId" placeholder="User ID" />
+        </div>
+      </div>
+      <div class="panel">
+        <div class="row">
+          <div class="pill">AI Recommendations</div>
+          <input id="budget" placeholder="Budget ₹" />
+          <button id="loadRec">Load</button>
+        </div>
+        <div id="rec" class="list"></div>
+        <div class="row">
+          <div class="pill">Assistant</div>
+        </div>
+        <div class="row">
+          <input id="query" placeholder="Suggest under 50 spicy and filling" />
+          <button id="ask">Ask</button>
+        </div>
+        <div id="assistant" class="list"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <div class="row"><div class="pill">My Orders</div><button id="loadOrders">Refresh</button></div>
+      <div id="orders" class="list"></div>
+    </div>
+  </div>
+  <script>
+    const socket = io();
+    const state = { cart: [], token: null, me: null };
+    const byId = x => document.getElementById(x);
+    const tokenKey = 'token';
+    const getToken = () => localStorage.getItem(tokenKey);
+    const setWho = () => {
+      const w = byId('who');
+      if (!w) return;
+      if (state.me) { w.textContent = `${state.me.name} (${state.me.role})`; byId('userId').value = state.me.id; byId('userId').disabled = true; }
+      else { w.textContent = 'Guest'; byId('userId').disabled = false; }
+    };
+    const renderMenu = items => {
+      const el = byId('menu');
+      el.innerHTML = '';
+      items.forEach(m => {
+        const d = document.createElement('div');
+        d.className = 'row';
+        d.innerHTML = `<div>${m.name} <span class="badge">₹${m.price}</span> <span class="muted">${m.category}</span></div>`;
+        const b = document.createElement('button');
+        b.textContent = 'Add';
+        b.onclick = () => addToCart(m);
+        d.appendChild(b);
+        el.appendChild(d);
+      });
+    };
+    const renderCart = () => {
+      const el = byId('cart');
+      el.innerHTML = '';
+      state.cart.forEach(c => {
+        const d = document.createElement('div');
+        d.className = 'row';
+        d.innerHTML = `<div>${c.name}</div>`;
+        const q = document.createElement('input');
+        q.type = 'number';
+        q.value = c.qty;
+        q.onchange = e => c.qty = parseInt(e.target.value || '1');
+        d.appendChild(q);
+        const r = document.createElement('button');
+        r.textContent = 'Remove';
+        r.onclick = () => removeFromCart(c.itemId);
+        d.appendChild(r);
+        el.appendChild(d);
+      });
+    };
+    const renderOrders = items => {
+      const el = byId('orders');
+      el.innerHTML = '';
+      items.forEach(o => {
+        const d = document.createElement('div');
+        d.className = 'row';
+        d.innerHTML = `<div>Token ${o.tokenNumber} • ₹${o.totalAmount} • <span class="badge">${o.status}</span> • ETA ${o.eta}m • ${o.paymentMethod || 'cash'}</div>`;
+        el.appendChild(d);
+        if (Array.isArray(o.messages)) {
+          o.messages.forEach(m => {
+            const md = document.createElement('div');
+            md.className = 'row';
+            md.innerHTML = `<div class="muted">Message from ${m.from}: ${m.text}</div>`;
+            el.appendChild(md);
+          });
+        }
+      });
+    };
+    const addToCart = m => {
+      const existing = state.cart.find(c => c.itemId === m.id);
+      if (existing) existing.qty += 1; else state.cart.push({ itemId: m.id, name: m.name, qty: 1 });
+      renderCart();
+    };
+    const removeFromCart = id => {
+      state.cart = state.cart.filter(c => c.itemId !== id);
+      renderCart();
+    };
+    byId('loadMenu').onclick = async () => {
+      const cat = byId('category').value;
+      const r = await fetch('/api/menu' + (cat ? ('?category=' + cat) : ''));
+      renderMenu(await r.json());
+    };
+    byId('placeOrder').onclick = async () => {
+      const userId = byId('userId').value || 'u1';
+      const specialInstructions = byId('notes').value || '';
+      const items = state.cart.map(c => ({ itemId: c.itemId, qty: c.qty }));
+      const headers = { 'Content-Type': 'application/json' };
+      if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+      const paymentMethod = document.getElementById('payment').value;
+      const r = await fetch('/api/orders', { method: 'POST', headers, body: JSON.stringify({ userId, items, specialInstructions, paymentMethod }) });
+      if (!r.ok) { const e = await r.json().catch(()=>({error:'unknown'})); alert('Order failed: ' + JSON.stringify(e)); return; }
+      const o = await r.json();
+      byId('notes').value = '';
+      state.cart = [];
+      renderCart();
+      loadOrders();
+    };
+    const loadOrders = async () => {
+      const userId = byId('userId').value || 'u1';
+      const headers = {};
+      if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+      const r = await fetch('/api/orders?userId=' + encodeURIComponent(userId), { headers });
+      renderOrders(await r.json());
+    };
+    byId('loadOrders').onclick = loadOrders;
+    byId('loadRec').onclick = async () => {
+      const userId = byId('userId').value || 'u1';
+      const b = byId('budget').value;
+      const headers = {};
+      if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+      const r = await fetch('/api/ai/recommendations?userId=' + encodeURIComponent(userId) + (b ? ('&budget=' + b) : ''), { headers });
+      const items = await r.json();
+      const el = byId('rec');
+      el.innerHTML = '';
+      items.forEach(m => {
+        const d = document.createElement('div');
+        d.className = 'row';
+        d.innerHTML = `<div>${m.name} <span class="badge">₹${m.price}</span></div>`;
+        const b = document.createElement('button');
+        b.textContent = 'Add';
+        b.onclick = () => addToCart(m);
+        d.appendChild(b);
+        el.appendChild(d);
+      });
+    };
+    byId('ask').onclick = async () => {
+      const q = byId('query').value;
+      const r = await fetch('/api/ai/assistant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q }) });
+      const items = await r.json();
+      const el = byId('assistant');
+      el.innerHTML = '';
+      items.forEach(m => {
+        const d = document.createElement('div');
+        d.className = 'row';
+        d.innerHTML = `<div>${m.name} <span class="badge">₹${m.price}</span></div>`;
+        const b = document.createElement('button');
+        b.textContent = 'Add';
+        b.onclick = () => addToCart(m);
+        d.appendChild(b);
+        el.appendChild(d);
+      });
+    };
+    socket.on('order:update', o => {
+      loadOrders();
+    });
+    byId('logout').onclick = async () => {
+      if (state.token) await fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.token } });
+      localStorage.removeItem('token');
+      state.token = null; state.me = null; setWho();
+      location.href = '/';
+    };
+    const initAuth = async () => {
+      state.token = getToken();
+      if (state.token) {
+        const r = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + state.token } });
+        if (r.ok) state.me = await r.json(); else { state.me = null; }
+      }
+      setWho();
+    };
+    initAuth();
+    byId('loadMenu').click();
+  </script>
+</body>
+</html>

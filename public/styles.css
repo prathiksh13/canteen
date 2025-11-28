@@ -1,0 +1,24 @@
+body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#0b1220;color:#e5e7eb}
+.wrap{max-width:960px;margin:0 auto;padding:24px}
+h1{font-size:24px;margin:0 0 16px}
+.cards{display:flex;gap:12px}
+.card{display:inline-block;padding:16px 20px;background:#111827;border:1px solid #1f2937;border-radius:8px;color:#e5e7eb;text-decoration:none}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.panel{background:#111827;border:1px solid #1f2937;border-radius:8px;padding:12px}
+.row{display:flex;gap:8px;align-items:center;margin:6px 0}
+button{background:#2563eb;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer}
+input,select,textarea{background:#0f172a;border:1px solid #1f2937;color:#e5e7eb;border-radius:6px;padding:8px}
+.list{max-height:300px;overflow:auto}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#1f2937}
+.pill{padding:6px 10px;border:1px solid #374151;border-radius:999px}
+.muted{color:#9ca3af}
+.header {
+  position: relative;
+}
+
+#logout {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 8px 12px;
+}
